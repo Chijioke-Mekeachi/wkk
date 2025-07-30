@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WKK Family - Form Submissions Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <div class="flex items-center">
+                        <div class="bg-gradient-to-r from-blue-500 to-purple-500 p-2 rounded-lg">
+                            <i data-lucide="zap" class="w-6 h-6 text-white"></i>
+                        </div>
+                        <h1 class="ml-3 text-xl font-bold text-gray-900">WKK Family Dashboard</h1>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span id="totalCount" class="text-sm text-gray-600">Loading...</span>
+                        <button onclick="refreshData()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                            <i data-lucide="refresh-cw" class="w-4 h-4 inline mr-2"></i>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Filters -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <select id="typeFilter" onchange="applyFilters()" class="border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">All Partnership Types</option>
+                        <option value="tech">Tech Collaborators</option>
+                        <option value="church">Church Sponsors</option>
+                        <option value="ambassador">Regional Ambassadors</option>
+                        <option value="speakers">Event Speakers</option>
+                    </select>
+                    <select id="statusFilter" onchange="applyFilters()" class="border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">All Statuses</option>
+                        <option value="new">New</option>
+                        <option value="reviewed">Reviewed</option>
+                        <option value="contacted">Contacted</option>
+                    </select>
+                    <button onclick="exportData()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                        <i data-lucide="download" class="w-4 h-4 inline mr-2"></i>
+                        Export CSV
+                    </button>
+                </div>
+            </div>
+
+            <!-- Submissions Table -->
+            <div class="bg-white rounded-lg shadow overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-lg font-semibold text-gray-900">Form Submissions</h2>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="submissionsTable" class="bg-white divide-y divide-gray-200">
+                            <!-- Data will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="pagination" class="px-6 py-4 border-t border-gray-200">
+                    <!-- Pagination will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for viewing submission details -->
+    <div id="submissionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold">Submission Details</h3>
+                        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                            <i data-lucide="x" class="w-6 h-6"></i>
+                        </button>
+                    </div>
+                    <div id="modalContent">
+                        <!-- Modal content will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        let currentPage = 1;
+        let currentFilters = {};
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSubmissions();
+        });
+
+        async function loadSubmissions(page = 1) {
+            try {
+                const params = new URLSearchParams({
+                    page,
+                    limit: 20,
+                    ...currentFilters
+                });
+
+                const response = await fetch(`${API_BASE}/forms/submissions?${params}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    renderSubmissions(data.data);
+                    renderPagination(data.pagination);
+                    document.getElementById('totalCount').textContent = `Total: ${data.pagination.total} submissions`;
+                }
+            } catch (error) {
+                console.error('Error loading submissions:', error);
+                alert('Error loading submissions. Please check if the server is running.');
+            }
+        }
+
+        function renderSubmissions(submissions) {
+            const tbody = document.getElementById('submissionsTable');
+            tbody.innerHTML = '';
+
+            submissions.forEach(submission => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${submission.name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${submission.email}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getTypeColor(submission.partnershipType)}">
+                            ${getTypeLabel(submission.partnershipType)}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <select onchange="updateStatus('${submission._id}', this.value)" class="text-xs border border-gray-300 rounded px-2 py-1 ${getStatusColor(submission.status)}">
+                            <option value="new" ${submission.status === 'new' ? 'selected' : ''}>New</option>
+                            <option value="reviewed" ${submission.status === 'reviewed' ? 'selected' : ''}>Reviewed</option>
+                            <option value="contacted" ${submission.status === 'contacted' ? 'selected' : ''}>Contacted</option>
+                        </select>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${new Date(submission.submittedAt).toLocaleDateString()}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button onclick="viewSubmission('${submission._id}')" class="text-blue-600 hover:text-blue-900 mr-3">View</button>
+                        <a href="mailto:${submission.email}" class="text-green-600 hover:text-green-900">Email</a>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function getTypeColor(type) {
+            const colors = {
+                tech: 'bg-blue-100 text-blue-800',
+                church: 'bg-green-100 text-green-800',
+                ambassador: 'bg-purple-100 text-purple-800',
+                speakers: 'bg-yellow-100 text-yellow-800'
+            };
+            return colors[type] || 'bg-gray-100 text-gray-800';
+        }
+
+        function getTypeLabel(type) {
+            const labels = {
+                tech: 'Tech Collaborator',
+                church: 'Church Sponsor',
+                ambassador: 'Regional Ambassador',
+                speakers: 'Event Speaker'
+            };
+            return labels[type] || type;
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                new: 'bg-red-50 text-red-700',
+                reviewed: 'bg-yellow-50 text-yellow-700',
+                contacted: 'bg-green-50 text-green-700'
+            };
+            return colors[status] || '';
+        }
+
+        async function updateStatus(id, status) {
+            try {
+                const response = await fetch(`${API_BASE}/forms/submissions/${id}/status`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ status })
+                });
+
+                if (response.ok) {
+                    loadSubmissions(currentPage);
+                }
+            } catch (error) {
+                console.error('Error updating status:', error);
+                alert('Error updating status');
+            }
+        }
+
+        function applyFilters() {
+            const type = document.getElementById('typeFilter').value;
+            const status = document.getElementById('statusFilter').value;
+            
+            currentFilters = {};
+            if (type) currentFilters.type = type;
+            if (status) currentFilters.status = status;
+            
+            currentPage = 1;
+            loadSubmissions(1);
+        }
+
+        function refreshData() {
+            loadSubmissions(currentPage);
+        }
+
+        async function viewSubmission(id) {
+            // This would fetch and display full submission details
+            // For now, we'll show a placeholder
+            document.getElementById('modalContent').innerHTML = `
+                <p>Loading submission details for ID: ${id}</p>
+                <p>This feature would show the full message and all details.</p>
+            `;
+            document.getElementById('submissionModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('submissionModal').classList.add('hidden');
+        }
+
+        function exportData() {
+            // This would export the current filtered data as CSV
+            alert('Export functionality would download a CSV file with the current filtered data.');
+        }
+
+        function renderPagination(pagination) {
+            const container = document.getElementById('pagination');
+            container.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="text-sm text-gray-700">
+                        Showing ${((pagination.page - 1) * pagination.limit) + 1} to ${Math.min(pagination.page * pagination.limit, pagination.total)} of ${pagination.total} results
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="loadSubmissions(${pagination.page - 1})" ${pagination.page <= 1 ? 'disabled' : ''} 
+                                class="px-3 py-1 border border-gray-300 rounded text-sm ${pagination.page <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}">
+                            Previous
+                        </button>
+                        <span class="px-3 py-1 text-sm">Page ${pagination.page} of ${pagination.pages}</span>
+                        <button onclick="loadSubmissions(${pagination.page + 1})" ${pagination.page >= pagination.pages ? 'disabled' : ''} 
+                                class="px-3 py-1 border border-gray-300 rounded text-sm ${pagination.page >= pagination.pages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}">
+                            Next
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
